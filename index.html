@@ -8,7 +8,7 @@
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3434186163148106" crossorigin="anonymous"></script>
     <script>
         window.adsbygoogle = window.adsbygoogle || [];
-        const adBreak = window.adBreak = function(o) { adsbygoogle.push(o); };
+        window.adBreak = window.adBreak || function(o) { adsbygoogle.push(o); };
     </script>
 
     <style>
@@ -85,6 +85,7 @@
             border: 2px solid #3f37c9;
             box-shadow: 0 15px 40px rgba(63, 55, 201, 0.25);
             display: block;
+            cursor: pointer;
         }
 
         #level-success-msg {
@@ -240,6 +241,7 @@
                 this.animX = 0; 
                 this.animY = 0;
                 this.hiz = 25; 
+                this.ekranDisindaMi = false;
             }
 
             getOccupiedCells(gX = this.gridX, gY = this.gridY) {
@@ -303,11 +305,6 @@
 
                 ctx.restore();
             }
-        }
-
-        function carpismaVarMi(box1, box2) {
-            return (box1.minX < box2.maxX && box1.maxX > box2.minX &&
-                    box1.minY < box2.maxY && box1.maxY > box2.minY);
         }
 
         function seviyeOlustur() {
@@ -394,43 +391,59 @@
                     }
                     gameOverScreen.style.display = "flex";
                 } else {
-                    if (hataYapanOk) hataYapanOk.durum = "sabit";
-                    if (carpişilanOk) carpişilanOk.durum = "sabit";
+                    if (hataYapanOk) {
+                        hataYapanOk.durum = "sabit";
+                        hataYapanOk.animX = 0;
+                        hataYapanOk.animY = 0;
+                    }
+                    if (carpişilanOk) {
+                        carpişilanOk.durum = "sabit";
+                        carpişilanOk.animX = 0;
+                        carpişilanOk.animY = 0;
+                    }
                     oyunDurduruldu = false;
                 }
             }, 600);
         }
 
+        // --- REKLAM ALANI ---
         function reklamIzleVeCanAl() {
             if (reklamHakki <= 0) return;
 
-            adBreak({
-                type: 'reward',
-                name: 'extra_life',
-                beforeAd: () => { oyunDurduruldu = true; },
-                afterAd: () => {},
-                beforeReward: (showAdFn) => { showAdFn(); },
-                adDismissed: () => { alert("Reklam kapatıldığı için can verilmedi."); },
-                adViewed: () => {
-                    reklamHakki--;
-                    can = 1; 
-                    oyunDurduruldu = false;
-                    canArayuzGuncelle();
-                    oklar.forEach(o => { if (o.durum === "hatali") o.durum = "sabit"; });
-                    gameOverScreen.style.display = "none";
-                },
-                adBreakDone: (info) => {
-                    if(info.breakStatus === "not_ready" || info.breakStatus === "timeout") {
-                        reklamHakki--;
-                        can = 1;
-                        oyunDurduruldu = false;
-                        canArayuzGuncelle();
-                        oklar.forEach(o => { if (o.durum === "hatali") o.durum = "sabit"; });
-                        gameOverScreen.style.display = "none";
-                        alert("Can eklendi, oyun devam ediyor.");
+            try {
+                window.adBreak({
+                    type: 'reward',
+                    name: 'extra_life',
+                    beforeAd: () => { oyunDurduruldu = true; },
+                    afterAd: () => {},
+                    beforeReward: (showAdFn) => { showAdFn(); },
+                    adDismissed: () => { alert("Reklam kapatıldığı için can verilmedi."); },
+                    adViewed: () => { rewardUser(); },
+                    adBreakDone: (info) => {
+                        // Google AdSense henüz hazır değilse oyuncuyu mağdur etmemek için canı veriyoruz
+                        if (info && (info.breakStatus === "not_ready" || info.breakStatus === "timeout" || info.breakStatus === "error")) {
+                            rewardUser();
+                        }
                     }
+                });
+            } catch (e) {
+                // Kodun çökmesini önleyen acil durum can kurtaranı
+                rewardUser();
+            }
+        }
+
+        function rewardUser() {
+            reklamHakki--;
+            can = 1; 
+            oyunDurduruldu = false;
+            canArayuzGuncelle();
+            oklar.forEach(o => { 
+                if (o.durum === "hatali") {
+                    o.durum = "sabit";
+                    o.animX = 0; o.animY = 0;
                 }
             });
+            gameOverScreen.style.display = "none";
         }
 
         function oyunuYenidenBaslat() {
@@ -452,7 +465,8 @@
             }, 1200);
         }
 
-        function dokunmaAlgila(clientX, clientY) {
+        // IPAD VE MOBIL UYUMLU %100 ÇALIŞAN TIKLAMA TESPİTİ
+        function dokunmaAlgila(e) {
             if (can <= 0 || oyunDurduruldu) return;
 
             const rect = canvas.getBoundingClientRect();
@@ -460,6 +474,13 @@
             let baslangicX = 10;
             let baslangicY = 10;
 
+            // Parmak dokunması (Touch) veya Fare tıklaması (Mouse) tespiti
+            const clientX = (e.touches && e.touches.length > 0) ? e.touches[0].clientX : e.clientX;
+            const clientY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
+
+            if (clientX === undefined || clientY === undefined) return;
+
+            // iPad ekran çözünürlüğüne göre oranlama (Kaymayı önler)
             const tikX = (clientX - rect.left) * (canvas.width / rect.width);
             const tikY = (clientY - rect.top) * (canvas.height / rect.height);
 
@@ -519,10 +540,11 @@
             }
         }
 
-        canvas.addEventListener('mousedown', (e) => dokunmaAlgila(e.clientX, e.clientY));
-        canvas.addEventListener('touchstart', (e) => {
-            dokunmaAlgila(e.touches[0].clientX, e.touches[0].clientY);
-            e.preventDefault();
+        // Olay Dinleyicileri (iPad için kilit önleyici hibrit mimari)
+        canvas.addEventListener('mousedown', dokunmaAlgila);
+        canvas.addEventListener('touchstart', function(e) {
+            dokunmaAlgila(e);
+            if(e.cancelable) e.preventDefault(); 
         }, { passive: false });
 
         function oyunDongusu() {
